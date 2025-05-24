@@ -22,6 +22,7 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route index element={<Navigate to="/login" replace />} />
+              <Route path="dashboard" element={<Navigate to="/vans" replace />} />
               <Route path="vans" element={<VanMasterPage />} />
               <Route path="inventory" element={<VanInventoryPage />} />
               <Route path="kilometers" element={<KilometerEntryPage />} />

@@ -65,6 +65,8 @@ export interface KilometerEntry {
   endReading: number;
   driverId?: string;
   authorized?: boolean;
+  distance?: number;
+  vanId?: string;
 }
 
 // Stoppage types
