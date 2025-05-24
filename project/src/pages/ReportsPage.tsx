@@ -17,7 +17,7 @@ import {
 } from 'chart.js';
 import { Bar, Pie, Line } from 'react-chartjs-2';
 import { ReportFilters, Van, KilometerEntry, Stoppage, InventoryItem } from '../types';
-import { mockVans, mockKilometerEntries, mockStoppages, mockInventoryItems } from '../utils/mockData';
+import { apiService } from '../services/api';
 
 // Register ChartJS components
 ChartJS.register(
@@ -37,6 +37,13 @@ const ReportsPage = () => {
   const [kmEntries, setKmEntries] = useState<KilometerEntry[]>([]);
   const [stoppages, setStoppages] = useState<Stoppage[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  // Dashboard stats for summary display
+  const [dashboardStats, setDashboardStats] = useState({
+    activeVans: 0,
+    totalKilometers: 0,
+    ongoingStoppages: 0,
+    inventoryAlerts: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
   
   const [filters, setFilters] = useState<ReportFilters>({
@@ -47,38 +54,59 @@ const ReportsPage = () => {
   });
 
   function getStartOfMonth() {
-    const date = new Date();
-    date.setDate(1);
-    return date.toISOString().split('T')[0];
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   }
 
   useEffect(() => {
-    // In a real app, this would be API calls
-    const fetchData = async () => {
-      try {
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setVans(mockVans);
-        setKmEntries(mockKilometerEntries);
-        setStoppages(mockStoppages);
-        setInventory(mockInventoryItems);
-      } catch (error) {
-        console.error('Error fetching report data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchData();
   }, []);
+
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      const [
+        vansData,
+        kmEntriesData,
+        stoppagesData,
+        inventoryData,
+        statsData
+      ] = await Promise.all([
+        apiService.getVans(),
+        apiService.getKilometerEntries(),
+        apiService.getStoppages(),
+        apiService.getInventory(),
+        apiService.getDashboardStats()
+      ]);
+
+      setVans(vansData);
+      setKmEntries(kmEntriesData);
+      setStoppages(stoppagesData);
+      setInventory(inventoryData);
+      setDashboardStats(statsData);
+    } catch (error) {
+      console.error('Error fetching reports data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFilters({ ...filters, [name]: value });
   };
 
+  // Add computed properties to KilometerEntry objects
+  const enhancedKmEntries = kmEntries.map(entry => ({
+    ...entry,
+    // Calculate distance from readings
+    distance: entry.endReading - entry.startReading,
+    // Map vehicleNo to vanId for filtering
+    vanId: vans.find(v => v.vehicleNo === entry.vehicleNo)?.id || entry.vehicleNo
+  }));
+
   // Filter data based on current filters
-  const filteredKmEntries = kmEntries.filter(entry => {
+  const filteredKmEntries = enhancedKmEntries.filter(entry => {
     const matchesVan = filters.vanId === 'all' || entry.vanId === filters.vanId;
     const matchesDate = (!filters.startDate || entry.date >= filters.startDate) && 
                          (!filters.endDate || entry.date <= filters.endDate);
@@ -360,6 +388,9 @@ const ReportsPage = () => {
                       <p className="text-2xl font-semibold text-gray-800 mt-1">
                         {filteredKmEntries.reduce((sum, entry) => sum + entry.distance, 0)} km
                       </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Overall: {dashboardStats.totalKilometers} km
+                      </p>
                     </div>
                     <div className="bg-blue-100 p-3 rounded-full">
                       <TrendingUp className="h-6 w-6 text-blue-600" />
@@ -622,7 +653,7 @@ const ReportsPage = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {stoppage.location?.address || 'No address recorded'}
+                              {stoppage.location ? `${stoppage.location.latitude.toFixed(6)}, ${stoppage.location.longitude.toFixed(6)}` : 'No location recorded'}
                             </td>
                           </tr>
                         ))

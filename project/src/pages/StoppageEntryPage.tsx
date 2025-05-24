@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Calendar, Truck, Edit, AlertTriangle, X, Clock, Check } from 'lucide-react';
 import { Stoppage, Van } from '../types';
-import { mockStoppages, mockVans } from '../utils/mockData';
+import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const StoppageEntryPage = () => {
@@ -10,11 +10,10 @@ const StoppageEntryPage = () => {
   const [vans, setVans] = useState<Van[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>(''); // Show all by default
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedVan, setSelectedVan] = useState<string>('all');
   const [editingStoppage, setEditingStoppage] = useState<Stoppage | null>(null);
 
-  // Only the required fields, no location
   const [formData, setFormData] = useState<{
     vehicleNo: string;
     fromDate: string;
@@ -30,21 +29,44 @@ const StoppageEntryPage = () => {
   });
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        setStoppages(mockStoppages.map(s => ({ ...s, authorized: s.authorized ?? false })));
-        setVans(mockVans);
-      } catch (error) {
-        console.error('Error fetching stoppage data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
     fetchData();
   }, []);
 
-  // Removed useEffect for location
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      console.log('Fetching stoppages and vans data...');
+      
+      const [stoppagesData, vansData] = await Promise.all([
+        apiService.getStoppages(),
+        apiService.getVans()
+      ]);
+      
+      console.log('Stoppages data received:', stoppagesData);
+      console.log('Vans data received:', vansData);
+      
+      // Only update state if we received valid data
+      if (Array.isArray(stoppagesData)) {
+        console.log('Setting stoppages state with', stoppagesData.length, 'items');
+        setStoppages(stoppagesData);
+      } else {
+        console.warn('Received non-array stoppages data:', stoppagesData);
+      }
+      
+      if (Array.isArray(vansData)) {
+        console.log('Setting vans state with', vansData.length, 'items');
+        setVans(vansData);
+      } else {
+        console.warn('Received non-array vans data:', vansData);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      // Don't reset the state to empty arrays on error
+      // This prevents the UI from showing empty data when there's a temporary API issue
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -53,42 +75,50 @@ const StoppageEntryPage = () => {
     setFormData({ ...formData, [name]: value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (editingStoppage) {
-      // Update existing stoppage
-      const updatedStoppages = stoppages.map(stoppage =>
-        stoppage.id === editingStoppage.id
-          ? {
-              ...stoppage,
-              vanId: formData.vehicleNo,
-              date: formData.fromDate,
-              startTime: '09:00',
-              endTime: formData.toDate ? '18:00' : undefined,
-              reason: formData.reason,
-              notes: formData.spareVehicle,
-              status: stoppage.status,
-            }
-          : stoppage
-      );
-      setStoppages(updatedStoppages);
-    } else {
-      // Add new stoppage
-      const newStoppage: Stoppage = {
-        id: `${stoppages.length + 1}`,
-        vanId: formData.vehicleNo,
-        date: formData.fromDate,
-        startTime: '09:00',
-        endTime: formData.toDate ? '18:00' : undefined,
+    
+    try {
+      // Map frontend field names to backend field names
+      const selectedVan = vans.find(v => v.id === formData.vehicleNo);
+      
+      const stoppageData = {
+        van_id: formData.vehicleNo,
+        vehicle_no: selectedVan?.vehicleNo || '',
+        from_date: formData.fromDate,
+        to_date: formData.toDate || null,
+        spare_vehicle: formData.spareVehicle,
         reason: formData.reason,
-        status: 'ongoing',
-        notes: formData.spareVehicle,
       };
-      setStoppages([...stoppages, newStoppage]);
-    }
 
-    handleCancelForm();
+      console.log('Submitting stoppage data:', stoppageData);
+
+      let result;
+      if (editingStoppage) {
+        result = await apiService.updateStoppage(editingStoppage.id, stoppageData);
+      } else {
+        result = await apiService.createStoppage(stoppageData);
+      }
+      
+      console.log('Stoppage saved successfully:', result);
+      
+      // Close the form first to improve perceived performance
+      handleCancelForm();
+      
+      // Then refresh the data
+      try {
+        await fetchData();
+      } catch (fetchError) {
+        console.error('Error refreshing data after save:', fetchError);
+        // If we can't refresh, at least add the new item to the current list
+        if (!editingStoppage && result) {
+          setStoppages(prev => [...prev, result]);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving stoppage:', error);
+      alert('Error saving stoppage: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   };
 
   const handleEdit = (stoppage: Stoppage) => {
@@ -103,25 +133,23 @@ const StoppageEntryPage = () => {
     setShowForm(true);
   };
 
-  const handleResolve = (id: string) => {
-    const updatedStoppages = stoppages.map(stoppage =>
-      stoppage.id === id
-        ? {
-            ...stoppage,
-            status: 'resolved' as 'resolved',
-            endTime: new Date().toTimeString().slice(0, 5),
-          }
-        : stoppage
-    );
-    setStoppages(updatedStoppages as Stoppage[]);
+  const handleResolve = async (id: string) => {
+    try {
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      await apiService.resolveStoppage(id, today);
+      await fetchData(); // Refresh the list
+    } catch (error) {
+      console.error('Error resolving stoppage:', error);
+    }
   };
 
-  const handleAuthorize = (id: string) => {
-    setStoppages(stoppages =>
-      stoppages.map(stoppage =>
-        stoppage.id === id ? { ...stoppage, authorized: !stoppage.authorized } : stoppage
-      )
-    );
+  const handleAuthorize = async (id: string, currentStatus: boolean) => {
+    try {
+      await apiService.authorizeStoppage(id, !currentStatus);
+      await fetchData(); // Refresh the list
+    } catch (error) {
+      console.error('Error authorizing stoppage:', error);
+    }
   };
 
   const handleCancelForm = () => {
@@ -136,8 +164,17 @@ const StoppageEntryPage = () => {
     });
   };
 
-  // Filter stoppages based on selected date and van
+  // Log the current state of stoppages and vans
+  console.log('Current stoppages state:', stoppages);
+  console.log('Current vans state:', vans);
+  
+  // Safely filter stoppages, handling potential undefined values
   const filteredStoppages = stoppages.filter(stoppage => {
+    if (!stoppage) {
+      console.warn('Found invalid stoppage in filter:', stoppage);
+      return false;
+    }
+    
     const matchesDate = !selectedDate || stoppage.date === selectedDate;
     const matchesVan = selectedVan === 'all' || stoppage.vanId === selectedVan;
     return matchesDate && matchesVan;
@@ -386,7 +423,7 @@ const StoppageEntryPage = () => {
                         </span>
                         {user?.role === 'admin' && (
                           <button
-                            onClick={() => handleAuthorize(stoppage.id)}
+                            onClick={() => handleAuthorize(stoppage.id, stoppage.authorized || false)}
                             className={`px-3 py-1 rounded-md text-xs font-semibold border border-gray-300 ${
                               stoppage.authorized
                                 ? 'bg-green-100 text-green-800'

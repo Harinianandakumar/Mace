@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash, X} from 'lucide-react';
+import { Plus, Edit, Trash, X} from 'lucide-react';
 import { Van } from '../types';
-import { mockVans } from '../utils/mockData';
+import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const VanMasterPage = () => {
-  const { user } = useAuth();
+  const { user: currentUser } = useAuth();
   const [vans, setVans] = useState<Van[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingVan, setEditingVan] = useState<Van | null>(null);
-  const [formData, setFormData] = useState<any>({
+  const [formData, setFormData] = useState<Omit<Van, 'id'>>({
     state: '',
     region: '',
     zone: '',
@@ -35,44 +35,94 @@ const VanMasterPage = () => {
   });
 
   useEffect(() => {
-    // In a real app, this would be an API call
-    const fetchVans = async () => {
-      try {
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 800));
-        setVans(mockVans);
-      } catch (error) {
-        console.error('Error fetching vans:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchVans();
   }, []);
+
+  const fetchVans = async () => {
+    try {
+      setIsLoading(true);
+      console.log('Fetching vans data...');
+      const vansData = await apiService.getVans();
+      console.log('Vans data received:', vansData);
+      
+      // Only update state if we received valid data
+      if (Array.isArray(vansData)) {
+        console.log('Setting vans state with', vansData.length, 'items');
+        setVans(vansData);
+      } else {
+        console.warn('Received non-array vans data:', vansData);
+      }
+    } catch (error) {
+      console.error('Error fetching vans:', error);
+      // Don't reset the state to empty array on error
+      // This prevents the UI from showing empty data when there's a temporary API issue
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Add or update van logic (update as per your Van type if needed)
-    if (editingVan) {
-      const updatedVans = vans.map(van =>
-        van.id === editingVan.id ? { ...van, ...formData } : van
-      );
-      setVans(updatedVans);
-    } else {
-      const newVan: any = {
-        id: `${vans.length + 1}`,
-        ...formData,
+    
+    try {
+      // Map frontend field names to backend field names
+      const vanData = {
+        state: formData.state,
+        region: formData.region,
+        zone: formData.zone,
+        sector: formData.sector,
+        city: formData.city,
+        vehicle_no: formData.vehicleNo,
+        registration_number: formData.vehicleNo, // Using vehicleNo as registration_number
+        make: formData.make,
+        type: formData.type,
+        model_year: formData.modelYear,
+        contract_type: formData.contractType,
+        owner_name: formData.ownerName,
+        travels_name: formData.travelsName,
+        address: formData.address,
+        driver_name: formData.driverName,
+        mobile_no: formData.mobileNo,
+        valid_from: formData.validFrom,
+        valid_to: formData.validTo,
+        rcl_incharge: formData.rclIncharge,
+        gp_installed: formData.gpInstalled,
+        gps_sim_no: formData.gpsSimNo
       };
-      setVans([...vans, newVan]);
+
+      console.log('Submitting van data:', vanData);
+
+      let result;
+      if (editingVan) {
+        result = await apiService.updateVan(editingVan.id, vanData);
+      } else {
+        result = await apiService.createVan(vanData);
+      }
+      
+      console.log('Van saved successfully:', result);
+      
+      // Close the form first to improve perceived performance
+      handleCancelForm();
+      
+      // Then refresh the data
+      try {
+        await fetchVans();
+      } catch (fetchError) {
+        console.error('Error refreshing data after save:', fetchError);
+        // If we can't refresh, at least add the new item to the current list
+        if (!editingVan && result) {
+          setVans(prev => [...prev, result]);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving van:', error);
+      alert('Error saving van: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
-    handleCancelForm();
   };
 
   const handleEdit = (van: Van) => {
@@ -102,9 +152,14 @@ const VanMasterPage = () => {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this van?')) {
-      setVans(vans.filter(van => van.id !== id));
+      try {
+        await apiService.deleteVan(id);
+        await fetchVans(); // Refresh the list
+      } catch (error) {
+        console.error('Error deleting van:', error);
+      }
     }
   };
 
@@ -135,45 +190,52 @@ const VanMasterPage = () => {
     });
   };
 
-  const filteredVans = vans.filter(van =>
-    (van.vehicleNo && van.vehicleNo.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (van.make && van.make.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (van.driverName && van.driverName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (van.city && van.city.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  // Log the current state of vans
+  console.log('Current vans state:', vans);
+  
+  // Safely filter vans, handling potential undefined values
+  const filteredVans = vans.filter(van => {
+    if (!van || !van.vehicleNo) {
+      console.warn('Found invalid van in filter:', van);
+      return false;
+    }
+    return van.vehicleNo.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold text-gray-800">Van Master</h1>
-        {/* Show Add New Van button only for drivers */}
-        {user?.role !== 'admin' && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Add New Van</span>
-          </button>
-        )}
+        <button
+          onClick={() => setShowForm(true)}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          <span>Add New Van</span>
+        </button>
       </div>
 
       {/* Search Bar */}
-      <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <Search className="h-5 w-5 text-gray-400" />
+      <div className="bg-white shadow rounded-lg p-4">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by vehicle number..."
+            className="flex-1 border border-gray-300 rounded-md shadow-sm px-3 py-2"
+          />
+          <button
+            onClick={() => setSearchQuery('')}
+            className="bg-gray-100 text-gray-500 hover:bg-gray-200 rounded-md px-4 py-2"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
-        <input
-          type="text"
-          placeholder="Search vans by registration number, model, or driver..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-        />
       </div>
 
-      {/* Van Form - only for drivers */}
-      {showForm && user?.role !== 'admin' && (
+      {/* Van Form */}
+      {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
@@ -190,244 +252,187 @@ const VanMasterPage = () => {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
-                  <select
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <input
                     name="state"
-                    required
                     value={formData.state}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
-                  >
-                    <option value="">Select State</option>
-                    <option value="Maharashtra">Maharashtra</option>
-                    <option value="Karnataka">Karnataka</option>
-                    <option value="Delhi">Delhi</option>
-                    {/* Add more states as needed */}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Region *</label>
-                  <select
-                    name="region"
-                    required
-                    value={formData.region}
-                    onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
-                  >
-                    <option value="">Select Region</option>
-                    <option value="West">West</option>
-                    <option value="South">South</option>
-                    <option value="North">North</option>
-                    {/* Add more regions as needed */}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Zone *</label>
-                  <select
-                    name="zone"
-                    required
-                    value={formData.zone}
-                    onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
-                  >
-                    <option value="">Select Zone</option>
-                    <option value="Zone 1">Zone 1</option>
-                    <option value="Zone 2">Zone 2</option>
-                    {/* Add more zones as needed */}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sector *</label>
-                  <input
-                    name="sector"
-                    type="text"
-                    required
-                    value={formData.sector}
-                    onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
+                  <input
+                    name="region"
+                    value={formData.region}
+                    onChange={handleInputChange}
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Zone</label>
+                  <input
+                    name="zone"
+                    value={formData.zone}
+                    onChange={handleInputChange}
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sector</label>
+                  <input
+                    name="sector"
+                    value={formData.sector}
+                    onChange={handleInputChange}
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
                   <input
                     name="city"
-                    type="text"
-                    required
                     value={formData.city}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle No *</label>
                   <input
                     name="vehicleNo"
-                    type="text"
                     required
                     value={formData.vehicleNo}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Make *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
                   <input
                     name="make"
-                    type="text"
-                    required
                     value={formData.make}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                   <input
                     name="type"
-                    type="text"
-                    required
                     value={formData.type}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Model (Year) *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Model Year</label>
                   <input
                     name="modelYear"
-                    type="text"
-                    required
                     value={formData.modelYear}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contract Type *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contract Type</label>
                   <input
                     name="contractType"
-                    type="text"
-                    required
                     value={formData.contractType}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
                   <input
                     name="ownerName"
-                    type="text"
-                    required
                     value={formData.ownerName}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Travels Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Travels Name</label>
                   <input
                     name="travelsName"
-                    type="text"
-                    required
                     value={formData.travelsName}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Address *</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                   <input
                     name="address"
-                    type="text"
-                    required
                     value={formData.address}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Driver Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Driver Name</label>
                   <input
                     name="driverName"
-                    type="text"
-                    required
                     value={formData.driverName}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mobile No *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mobile No</label>
                   <input
                     name="mobileNo"
-                    type="text"
-                    required
                     value={formData.mobileNo}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid From *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
                   <input
                     name="validFrom"
                     type="date"
-                    required
                     value={formData.validFrom}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid To *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid To</label>
                   <input
                     name="validTo"
                     type="date"
-                    required
                     value={formData.validTo}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">RCL Incharge *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">RCL Incharge</label>
                   <input
                     name="rclIncharge"
-                    type="text"
-                    required
                     value={formData.rclIncharge}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GP Installed *</label>
-                  <select
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GPS Installed</label>
+                  <input
                     name="gpInstalled"
-                    required
                     value={formData.gpInstalled}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
-                  >
-                    <option value="">Select</option>
-                    <option value="Yes">Yes</option>
-                    <option value="No">No</option>
-                  </select>
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GPS Sim No *</label>
-                  <select
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GPS SIM No</label>
+                  <input
                     name="gpsSimNo"
-                    required
                     value={formData.gpsSimNo}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
-                  >
-                    <option value="">Select</option>
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
+                    className="block w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                  />
                 </div>
               </div>
               <div className="flex justify-end gap-3 pt-2">
@@ -464,7 +469,7 @@ const VanMasterPage = () => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle No</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Make</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model (Year)</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model Year</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contract Type</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Owner Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Travels Name</th>
@@ -474,12 +479,9 @@ const VanMasterPage = () => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valid From</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valid To</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RCL Incharge</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GP Installed</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GPS Sim No</th>
-                {/* Show Actions column only for drivers */}
-                {user?.role !== 'admin' && (
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                )}
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GPS Installed</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GPS SIM No</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -495,11 +497,11 @@ const VanMasterPage = () => {
               ) : filteredVans.length === 0 ? (
                 <tr>
                   <td colSpan={21} className="px-6 py-4 text-center text-sm text-gray-500">
-                    {searchQuery ? 'No vans matching your search' : 'No vans available'}
+                    No vans found.
                   </td>
                 </tr>
               ) : (
-                filteredVans.map((van: any) => (
+                filteredVans.map((van: Van) => (
                   <tr key={van.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2">{van.state}</td>
                     <td className="px-4 py-2">{van.region}</td>
@@ -516,30 +518,27 @@ const VanMasterPage = () => {
                     <td className="px-4 py-2">{van.address}</td>
                     <td className="px-4 py-2">{van.driverName}</td>
                     <td className="px-4 py-2">{van.mobileNo}</td>
-                    <td className="px-4 py-2">{van.validFrom}</td>
-                    <td className="px-4 py-2">{van.validTo}</td>
+                    <td className="px-4 py-2">{new Date(van.validFrom).toLocaleDateString()}</td>
+                    <td className="px-4 py-2">{new Date(van.validTo).toLocaleDateString()}</td>
                     <td className="px-4 py-2">{van.rclIncharge}</td>
                     <td className="px-4 py-2">{van.gpInstalled}</td>
                     <td className="px-4 py-2">{van.gpsSimNo}</td>
-                    {/* Show Actions buttons only for drivers */}
-                    {user?.role !== 'admin' && (
-                      <td className="px-4 py-2">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleEdit(van)}
-                            className="text-blue-600 hover:text-blue-900"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(van.id)}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            <Trash className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
+                    <td className="px-4 py-2">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleEdit(van)}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <Edit className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(van.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

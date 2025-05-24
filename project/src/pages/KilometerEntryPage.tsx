@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Truck, X } from 'lucide-react';
 import { KilometerEntry, Van } from '../types';
-import { mockKilometerEntries, mockVans } from '../utils/mockData';
+import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const KilometerEntryPage = () => {
@@ -10,35 +10,39 @@ const KilometerEntryPage = () => {
   const [vans, setVans] = useState<Van[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  // Set selectedDate to empty string by default
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedVan, setSelectedVan] = useState<string>('all');
   const [editingEntry, setEditingEntry] = useState<KilometerEntry | null>(null);
+  const [error, setError] = useState<string>('');
   
   const [formData, setFormData] = useState<Partial<KilometerEntry>>({
     vehicleNo: '',
-    date: '', // No default date
+    date: '',
     startReading: 0,
     endReading: 0,
   });
 
   useEffect(() => {
-    // In a real app, this would be an API call
-    const fetchData = async () => {
-      try {
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 800));
-        setEntries(mockKilometerEntries.map(e => ({ ...e, authorized: e.authorized ?? false })));
-        setVans(mockVans);
-      } catch (error) {
-        console.error('Error fetching kilometer data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchData();
   }, []);
+
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      setError('');
+      const [entriesData, vansData] = await Promise.all([
+        apiService.getKilometerEntries(),
+        apiService.getVans()
+      ]);
+      setEntries(entriesData.map(e => ({ ...e, authorized: e.authorized ?? false })));
+      setVans(vansData);
+    } catch (error) {
+      console.error('Error fetching kilometer data:', error);
+      setError('Failed to load data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -46,9 +50,6 @@ const KilometerEntryPage = () => {
     // For numeric fields, parse as numbers
     if (['startReading', 'endReading'].includes(name)) {
       const numValue = parseInt(value) || 0;
-      
-      // Calculate distance when either start or end reading changes
-      
       setFormData({ 
         ...formData, 
         [name]: numValue,
@@ -58,34 +59,48 @@ const KilometerEntryPage = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingEntry) {
-      // Update existing entry
-      const updatedEntries = entries.map(entry => 
-        entry.id === editingEntry.id ? { 
-          ...entry, 
-          ...formData,
-          driverId: user?.id || 'unknown'
-        } : entry
-      );
-      setEntries(updatedEntries);
+    try {
+      setError('');
+      
+      // Map frontend field names to backend field names
+      const selectedVan = vans.find(v => v.vehicleNo === formData.vehicleNo);
+      
+      if (editingEntry) {
+        // Update existing entry
+        const updateData = {
+          van_id: selectedVan?.id || '',
+          vehicle_no: formData.vehicleNo || '',
+          date: formData.date || new Date().toISOString().split('T')[0],
+          start_reading: formData.startReading || 0,
+          end_reading: formData.endReading || 0
+        };
+        
+        console.log('Updating kilometer entry with data:', updateData);
+        await apiService.updateKilometerEntry(editingEntry.id, updateData);
       } else {
-      // Add new entry
-      const newEntry: KilometerEntry = {
-        id: `${entries.length + 1}`,
-        vehicleNo: formData.vehicleNo || '',
-        date: formData.date || new Date().toISOString().split('T')[0],
-        startReading: formData.startReading || 0,
-        endReading: formData.endReading || 0,
-    
-      };
-      setEntries([...entries, newEntry]);
+        // Add new entry
+        const entryData = {
+          van_id: selectedVan?.id || '',
+          vehicle_no: formData.vehicleNo || '',
+          date: formData.date || new Date().toISOString().split('T')[0],
+          start_reading: formData.startReading || 0,
+          end_reading: formData.endReading || 0
+        };
+        
+        console.log('Creating kilometer entry with data:', entryData);
+        await apiService.createKilometerEntry(entryData);
+      }
+      
+      // Refresh data and close form
+      await fetchData();
+      handleCancelForm();
+    } catch (error) {
+      console.error('Error saving kilometer entry:', error);
+      setError('Failed to save kilometer entry. Please try again.');
     }
-    
-    // Reset form
-    handleCancelForm();
   };
 
   const handleEdit = (entry: KilometerEntry) => {
@@ -95,8 +110,6 @@ const KilometerEntryPage = () => {
       date: entry.date,
       startReading: entry.startReading,
       endReading: entry.endReading,
-    
-  
     });
     setShowForm(true);
   };
@@ -104,20 +117,37 @@ const KilometerEntryPage = () => {
   const handleCancelForm = () => {
     setShowForm(false);
     setEditingEntry(null);
+    setError('');
     setFormData({
       vehicleNo: '',
-      date: new Date().toISOString().split('T')[0],
+      date: '',
       startReading: 0,
       endReading: 0,
     });
   };
 
-  const handleAuthorize = (id: string) => {
-    setEntries(entries =>
-      entries.map(entry =>
-        entry.id === id ? { ...entry, authorized: !entry.authorized } : entry
-      )
-    );
+  const handleAuthorize = async (id: string, currentStatus: boolean) => {
+    try {
+      setError('');
+      await apiService.authorizeKilometerEntry(id, !currentStatus);
+      await fetchData(); // Refresh the list
+    } catch (error) {
+      console.error('Error authorizing entry:', error);
+      setError('Failed to update authorization. Please try again.');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this kilometer entry?')) {
+      try {
+        setError('');
+        await apiService.deleteKilometerEntry(id);
+        await fetchData(); // Refresh the list
+      } catch (error) {
+        console.error('Error deleting entry:', error);
+        setError('Failed to delete kilometer entry. Please try again.');
+      }
+    }
   };
 
   // Filter entries based on selected date and van
@@ -128,10 +158,6 @@ const KilometerEntryPage = () => {
     return matchesDate && matchesVan;
   });
 
-  // Get the van registration number for display
-
-  // Helper to get van details by id
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -141,11 +167,32 @@ const KilometerEntryPage = () => {
             onClick={() => setShowForm(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
           >
-            {/* Icon and label */}
             Add Kilometer Entry
           </button>
         )}
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <X className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                onClick={() => setError('')}
+                className="text-red-400 hover:text-red-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-4">
@@ -172,8 +219,8 @@ const KilometerEntryPage = () => {
             >
               <option value="all">All Vans</option>
               {vans.map(van => (
-                <option key={van.id} value={van.id}>
-                  {van.registrationNumber}
+                <option key={van.id} value={van.vehicleNo}>
+                  {van.vehicleNo}
                 </option>
               ))}
             </select>
@@ -201,15 +248,21 @@ const KilometerEntryPage = () => {
                 <label htmlFor="vehicleNo" className="block text-sm font-medium text-gray-700 mb-1">
                   Vehicle No *
                 </label>
-                <input
+                <select
                   id="vehicleNo"
                   name="vehicleNo"
-                  type="text"
                   required
                   value={formData.vehicleNo || ''}
                   onChange={handleInputChange}
                   className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
-                />
+                >
+                  <option value="">Select Vehicle</option>
+                  {vans.map(van => (
+                    <option key={van.id} value={van.vehicleNo}>
+                      {van.vehicleNo}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
@@ -286,7 +339,7 @@ const KilometerEntryPage = () => {
                   Vehicle No
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  GPS Number
+                  Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Opening KM
@@ -328,7 +381,7 @@ const KilometerEntryPage = () => {
                       {entry.vehicleNo}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {(vans.find(v => v.vehicleNo === entry.vehicleNo)?.gpsSimNo) || '-'}
+                      {new Date(entry.date).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {entry.startReading}
@@ -340,27 +393,43 @@ const KilometerEntryPage = () => {
                       {entry.endReading - entry.startReading}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {entry.authorized ? "Authorized" : "Yet to Authorize"}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        entry.authorized 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {entry.authorized ? "Authorized" : "Pending"}
+                      </span>
                       {user?.role === 'admin' && (
                         <button
-                          onClick={() => handleAuthorize(entry.id)}
+                          onClick={() => handleAuthorize(entry.id, entry.authorized || false)}
                           className={`ml-3 px-3 py-1 rounded-md text-xs font-semibold ${
                             entry.authorized
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          } border border-gray-300 hover:bg-blue-50`}
+                              ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                              : 'bg-green-100 text-green-800 hover:bg-green-200'
+                          } border border-gray-300`}
                         >
                           {entry.authorized ? "Revoke" : "Authorize"}
                         </button>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={() => handleEdit(entry)}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => handleEdit(entry)}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          Edit
+                        </button>
+                        {user?.role === 'admin' && (
+                          <button
+                            onClick={() => handleDelete(entry.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

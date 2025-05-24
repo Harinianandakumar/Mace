@@ -1,26 +1,69 @@
 import { useState } from 'react';
-import { useNavigate} from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Truck, Lock, Mail, AlertCircle } from 'lucide-react';
-
-
+import { Truck, Lock, Mail, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [isLoading,] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const success = await login(email, password);
-    if (success) {
-      navigate('/vans'); // or navigate(from, { replace: true });
-    } else {
-      setError('Invalid credentials');
+    setError('');
+    
+    if (!email || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const success = await login(email, password);
+      
+      if (success) {
+        navigate('/dashboard', { replace: true });
+      } else {
+        setError('Invalid email or password. Please try again.');
+      }
+    } catch (err: unknown) {
+      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'Login failed. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Demo login handlers
+  const handleDemoLogin = async (userType: 'admin' | 'driver') => {
+    const demoCredentials = {
+      admin: { email: 'admin@mace.com', password: 'password' },
+      driver: { email: 'driver@mace.com', password: 'password' }
+    };
+
+    const { email: demoEmail, password: demoPassword } = demoCredentials[userType];
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    
+    try {
+      setIsLoading(true);
+      setError('');
+      const success = await login(demoEmail, demoPassword);
+      
+      if (success) {
+        navigate('/dashboard', { replace: true });
+      } else {
+        setError('Demo login failed. Please try again.');
+      }
+    } catch (err: unknown) {
+      console.error('Demo login error:', err);
+      setError(err instanceof Error ? err.message : 'Demo login failed. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -41,9 +84,9 @@ const LoginPage = () => {
         
         <div className="mt-8 bg-white py-8 px-4 sm:px-10 shadow rounded-lg">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" />
-              <span>{error}</span>
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <span className="text-sm">{error}</span>
             </div>
           )}
           
@@ -64,8 +107,9 @@ const LoginPage = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="admin@mace.com or driver@mace.com"
+                  disabled={isLoading}
+                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500"
+                  placeholder="Enter your email"
                 />
               </div>
             </div>
@@ -81,17 +125,29 @@ const LoginPage = () => {
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="password"
+                  disabled={isLoading}
+                  className="appearance-none block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500"
+                  placeholder="Enter your password"
                 />
-              </div>
-              <div className="mt-2 text-xs text-gray-500">
-                Hint: use "password" for demo accounts
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    disabled={isLoading}
+                    className="text-gray-400 hover:text-gray-500 focus:outline-none"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -123,10 +179,42 @@ const LoginPage = () => {
                   isLoading ? 'opacity-70 cursor-not-allowed' : ''
                 }`}
               >
-                {isLoading ? 'Signing in...' : 'Sign in'}
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Signing in...
+                  </div>
+                ) : (
+                  'Sign in'
+                )}
               </button>
             </div>
           </form>
+
+          {/* Demo Login Buttons */}
+          <div className="mt-6 border-t border-gray-200 pt-6">
+            <div className="text-center">
+              <p className="text-sm text-gray-600 mb-4">Quick demo access:</p>
+              <div className="flex flex-col space-y-2">
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin('admin')}
+                  disabled={isLoading}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Login as Admin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoLogin('driver')}
+                  disabled={isLoading}
+                  className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Login as Driver
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

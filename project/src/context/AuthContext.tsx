@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { apiService } from '../services/api';
 
 interface User {
   id: string;
@@ -30,49 +31,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    const storedUser = localStorage.getItem('mace_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const initAuth = async () => {
+      const token = localStorage.getItem('mace_token');
+      if (token) {
+        try {
+          const userData = await apiService.getProfile();
+          setUser(userData);
+        } catch (error) {
+          console.error('Failed to get profile:', error);
+          // Token might be expired or invalid
+          localStorage.removeItem('mace_token');
+        }
+      }
+      setLoading(false);
+    };
+
+    initAuth();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setLoading(true);
-      // This is a mock implementation. In a real app, you would make an API call.
-      // Simulating API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const data = await apiService.login(email, password);
+      console.log('Login response in AuthContext:', data);
       
-      // For demo purposes - in production this would validate against a backend
-      if (email === 'admin@mace.com' && password === 'password') {
-        const userData: User = {
-          id: '1',
-          name: 'Admin User',
-          email: 'admin@mace.com',
-          role: 'admin'
-        };
-        setUser(userData);
-        localStorage.setItem('mace_user', JSON.stringify(userData));
+      if (data && data.user) {
+        // Store the token in localStorage
+        if (data.token) {
+          localStorage.setItem('mace_token', data.token);
+        }
+        setUser(data.user);
         return true;
+      } else {
+        console.error('Login response missing user data:', data);
+        return false;
       }
-      
-      if (email === 'driver@mace.com' && password === 'password') {
-        const userData: User = {
-          id: '2',
-          name: 'Driver User',
-          email: 'driver@mace.com',
-          role: 'driver'
-        };
-        setUser(userData);
-        localStorage.setItem('mace_user', JSON.stringify(userData));
-        return true;
-      }
-      
-      return false;
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Login failed:', error);
       return false;
     } finally {
       setLoading(false);
@@ -80,8 +75,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    apiService.logout();
     setUser(null);
-    localStorage.removeItem('mace_user');
   };
 
   return (

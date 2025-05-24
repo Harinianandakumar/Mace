@@ -1,16 +1,45 @@
 import { useState, useEffect } from 'react';
 import { Search, Edit, Trash, X } from 'lucide-react';
+import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { Van, InventoryItem } from '../types';
+
+// Define a custom interface for our form data
+interface InventoryFormData {
+  bu: string;
+  item: string;
+  qty: string;
+  uom: string;
+}
+
+// Define an interface that extends the standard InventoryItem with legacy fields
+interface ExtendedInventoryItem extends InventoryItem {
+  // Legacy fields that might be present in the API response
+  bu?: string;
+  item?: string;
+  qty?: number;
+  uom?: string;
+}
+
+// Define a custom interface for our inventory items as they appear in the UI
+interface UIInventoryItem {
+  id: string;
+  bu: string;
+  item: string;
+  qty: string;
+  uom: string;
+}
 
 const VanInventoryPage = () => {
-  const [inventory, setInventory] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<UIInventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [editingItem, setEditingItem] = useState<UIInventoryItem | null>(null);
+  const [vans, setVans] = useState<Van[]>([]);
+  const [selectedVanId, setSelectedVanId] = useState<string>('');
 
-  // Only new fields
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<InventoryFormData>({
     bu: '',
     item: '',
     qty: '',
@@ -20,9 +49,43 @@ const VanInventoryPage = () => {
   const { user } = useAuth();
 
   useEffect(() => {
-    // Simulate API call
-    setIsLoading(false);
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      const [inventoryData, vansData] = await Promise.all([
+        apiService.getInventory(),
+        apiService.getVans()
+      ]);
+      
+      console.log('Inventory data received:', inventoryData);
+      console.log('Vans data received:', vansData);
+      
+      // Map the API inventory items to our UI model
+      const uiInventoryItems = inventoryData.map((item: ExtendedInventoryItem) => ({
+        id: item.id,
+        bu: item.bu || item.category || '', // Using bu field or fallback to category
+        item: item.item || item.name || '',  // Using item field or fallback to name
+        qty: (item.qty?.toString() || item.quantity?.toString() || '0'), // Using qty field or fallback to quantity
+        uom: item.uom || item.unit || ''     // Using uom field or fallback to unit
+      }));
+      
+      setInventory(uiInventoryItems);
+      setVans(vansData);
+      
+      // Set default van if available
+      if (vansData.length > 0 && !selectedVanId) {
+        setSelectedVanId(vansData[0].id);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement>
@@ -31,24 +94,39 @@ const VanInventoryPage = () => {
     setFormData({ ...formData, [name]: name === 'qty' ? value.replace(/\D/, '') : value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingItem) {
-      const updatedInventory = inventory.map(item =>
-        item.id === editingItem.id ? { ...item, ...formData } : item
-      );
-      setInventory(updatedInventory);
-    } else {
-      const newItem = {
-        id: `${inventory.length + 1}`,
-        ...formData,
-      };
-      setInventory([...inventory, newItem]);
+    
+    if (!selectedVanId) {
+      alert('Please select a van first');
+      return;
     }
-    handleCancelForm();
+    
+    try {
+      // Map frontend field names to backend field names
+      const inventoryData = {
+        van_id: selectedVanId,
+        bu: formData.bu,
+        item: formData.item,
+        qty: parseInt(formData.qty) || 0,
+        uom: formData.uom
+      };
+      
+      console.log('Submitting inventory data:', inventoryData);
+      
+      if (editingItem) {
+        await apiService.updateInventoryItem(editingItem.id, inventoryData);
+      } else {
+        await apiService.createInventoryItem(inventoryData);
+      }
+      await fetchData(); // Refresh the list
+      handleCancelForm();
+    } catch (error) {
+      console.error('Error saving inventory item:', error);
+    }
   };
 
-  const handleEdit = (item: any) => {
+  const handleEdit = (item: UIInventoryItem) => {
     setEditingItem(item);
     setFormData({
       bu: item.bu,
@@ -56,12 +134,18 @@ const VanInventoryPage = () => {
       qty: item.qty,
       uom: item.uom,
     });
+    // Don't change the selected van when editing
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this inventory item?')) {
-      setInventory(inventory.filter(item => item.id !== id));
+      try {
+        await apiService.deleteInventoryItem(id);
+        await fetchData(); // Refresh the list
+      } catch (error) {
+        console.error('Error deleting inventory item:', error);
+      }
     }
   };
 
@@ -74,6 +158,7 @@ const VanInventoryPage = () => {
       qty: '',
       uom: '',
     });
+    // Don't reset the selected van
   };
 
   // Filter inventory items based on search query
@@ -131,6 +216,26 @@ const VanInventoryPage = () => {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="vanId" className="block text-sm font-medium text-gray-700 mb-1">
+                  Van *
+                </label>
+                <select
+                  id="vanId"
+                  name="vanId"
+                  required
+                  value={selectedVanId}
+                  onChange={(e) => setSelectedVanId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md shadow-sm px-3 py-2"
+                >
+                  <option value="">Select a van</option>
+                  {vans.map(van => (
+                    <option key={van.id} value={van.id}>
+                      {van.vehicleNo || van.registrationNumber || `Van ID: ${van.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label htmlFor="bu" className="block text-sm font-medium text-gray-700 mb-1">
                   BU *
