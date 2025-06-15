@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
-  Calendar, Download, FileText, Filter, PieChart, BarChart2, 
-  TrendingUp, Truck, Package, AlertTriangle 
+  Calendar, FileText, Filter, PieChart, BarChart2, 
+  TrendingUp, Package, AlertTriangle 
 } from 'lucide-react';
 import { 
   Chart as ChartJS, 
@@ -36,10 +36,9 @@ const ReportsPage = () => {
   const [vans, setVans] = useState<Van[]>([]);
   const [kmEntries, setKmEntries] = useState<KilometerEntry[]>([]);
   const [stoppages, setStoppages] = useState<Stoppage[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventory, setInventory] = useState<ExtendedInventoryItem[]>([]);
   // Dashboard stats for summary display
   const [dashboardStats, setDashboardStats] = useState({
-    activeVans: 0,
     totalKilometers: 0,
     ongoingStoppages: 0,
     inventoryAlerts: 0,
@@ -82,7 +81,42 @@ const ReportsPage = () => {
       setVans(vansData);
       setKmEntries(kmEntriesData);
       setStoppages(stoppagesData);
-      setInventory(inventoryData);
+      
+      // Process inventory data to ensure vanId is properly set and handle the new format
+      const processedInventory = inventoryData.map(item => {
+        // Cast the item to our ApiInventoryItem interface to access all possible property names
+        const apiItem = item as ApiInventoryItem;
+        
+        // Extract the vanId from the item using various possible property names
+        let vanId = apiItem.vanId || ''; // Start with the existing vanId if available
+        
+        // If vanId is not set, try to get it from other possible property names
+        if (!vanId) {
+          if (apiItem.van_id) vanId = apiItem.van_id;
+          else if (apiItem.vanID) vanId = apiItem.vanID;
+          else if (apiItem.vanid) vanId = apiItem.vanid;
+          else if (apiItem.van) {
+            vanId = typeof apiItem.van === 'object' ? apiItem.van.id : apiItem.van;
+          }
+        }
+        
+        // Get the item value, which might be a comma-separated list of items
+        const itemValue = apiItem.item || apiItem.name || '';
+        // Split the item value into an array if it contains commas
+        const itemsArray = itemValue.includes(',') ? itemValue.split(',').map(i => i.trim()) : [itemValue];
+        
+        // Create a new item with the vanId property properly set
+        return {
+          ...item,
+          vanId: vanId || '', // Ensure vanId is never undefined
+          item: itemValue,    // Keep the original string format
+          items: itemsArray,  // Store as array for internal use
+          qty: apiItem.qty || apiItem.quantity || 0,
+          uom: apiItem.uom || apiItem.unit || ''
+        } as ExtendedInventoryItem;
+      });
+      
+      setInventory(processedInventory);
       setDashboardStats(statsData);
     } catch (error) {
       console.error('Error fetching reports data:', error);
@@ -267,18 +301,12 @@ const ReportsPage = () => {
     
     // Weekly data
     return labels.map(() => 60 + Math.random() * 40);
-  }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold text-gray-800">Reports & Analytics</h1>
-        <button
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
-        >
-          <Download className="h-4 w-4" />
-          <span>Export Report</span>
-        </button>
       </div>
 
       {/* Filters */}
@@ -327,44 +355,49 @@ const ReportsPage = () => {
             </select>
           </div>
           
-          <div>
-            <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
-              Start Date
-            </label>
-            <div className="relative rounded-md shadow-sm">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Calendar className="h-5 w-5 text-gray-400" />
+          {/* Only show date filters for non-inventory reports */}
+          {filters.reportType !== 'inventory' && (
+            <>
+              <div>
+                <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
+                  Start Date
+                </label>
+                <div className="relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Calendar className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="startDate"
+                    name="startDate"
+                    type="date"
+                    value={filters.startDate || ''}
+                    onChange={handleFilterChange}
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
               </div>
-              <input
-                id="startDate"
-                name="startDate"
-                type="date"
-                value={filters.startDate || ''}
-                onChange={handleFilterChange}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
-          
-          <div>
-            <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
-              End Date
-            </label>
-            <div className="relative rounded-md shadow-sm">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Calendar className="h-5 w-5 text-gray-400" />
+              
+              <div>
+                <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+                  End Date
+                </label>
+                <div className="relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Calendar className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="endDate"
+                    name="endDate"
+                    type="date"
+                    value={filters.endDate || ''}
+                    onChange={handleFilterChange}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
               </div>
-              <input
-                id="endDate"
-                name="endDate"
-                type="date"
-                value={filters.endDate || ''}
-                onChange={handleFilterChange}
-                max={new Date().toISOString().split('T')[0]}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -380,7 +413,7 @@ const ReportsPage = () => {
           {filters.reportType === 'overview' && (
             <>
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white rounded-lg shadow p-5">
                   <div className="flex justify-between">
                     <div>
@@ -412,24 +445,12 @@ const ReportsPage = () => {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow p-5">
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="text-gray-500 text-sm font-medium">Active Vans</p>
-                      <p className="text-2xl font-semibold text-gray-800 mt-1">
-                        {vans.filter(van => van.status === 'active').length} / {vans.length}
-                      </p>
-                    </div>
-                    <div className="bg-green-100 p-3 rounded-full">
-                      <Truck className="h-6 w-6 text-green-600" />
-                    </div>
-                  </div>
-                </div>
+
 
                 <div className="bg-white rounded-lg shadow p-5">
                   <div className="flex justify-between">
                     <div>
-                      <p className="text-gray-500 text-sm font-medium">Inventory Items</p>
+                      <p className="text-gray-500 text-sm font-medium">Inventory Entries</p>
                       <p className="text-2xl font-semibold text-gray-800 mt-1">
                         {inventory.filter(item => 
                           filters.vanId === 'all' || item.vanId === filters.vanId
@@ -439,6 +460,12 @@ const ReportsPage = () => {
                     <div className="bg-yellow-100 p-3 rounded-full">
                       <Package className="h-6 w-6 text-yellow-600" />
                     </div>
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600">
+                    {new Set(inventory
+                      .filter(item => filters.vanId === 'all' || item.vanId === filters.vanId)
+                      .flatMap(item => item.items || [])
+                    ).size} unique items across all entries
                   </div>
                 </div>
               </div>
@@ -610,20 +637,14 @@ const ReportsPage = () => {
                           Reason
                         </th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Duration
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Location
+                          Authorization
                         </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredStoppages.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                          <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
                             No stoppage entries found for the selected filters
                           </td>
                         </tr>
@@ -639,21 +660,14 @@ const ReportsPage = () => {
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               {stoppage.reason}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {stoppage.startTime} 
-                              {stoppage.endTime ? ` - ${stoppage.endTime}` : ' (ongoing)'}
-                            </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                stoppage.status === 'ongoing' 
-                                  ? 'bg-red-100 text-red-800' 
-                                  : 'bg-green-100 text-green-800'
+                                stoppage.authorized 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-yellow-100 text-yellow-800'
                               }`}>
-                                {stoppage.status.charAt(0).toUpperCase() + stoppage.status.slice(1)}
+                                {stoppage.authorized ? 'Authorized' : 'Pending'}
                               </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {stoppage.location ? `${stoppage.location.latitude.toFixed(6)}, ${stoppage.location.longitude.toFixed(6)}` : 'No location recorded'}
                             </td>
                           </tr>
                         ))
@@ -674,40 +688,27 @@ const ReportsPage = () => {
                   <h2 className="text-lg font-medium text-gray-800">Inventory Status</h2>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div className="border border-gray-200 rounded-lg p-4">
-                    <p className="text-sm text-gray-500">Total Items</p>
+                    <p className="text-sm text-gray-500">Total Inventory Entries</p>
                     <p className="text-2xl font-semibold text-gray-800">
                       {inventory.filter(item => 
-                        filters.vanId === 'all' || item.vanId === filters.vanId
+                        filters.vanId === 'all' || 
+                        (item.vanId && filters.vanId && item.vanId.toString() === filters.vanId.toString())
                       ).length}
                     </p>
                   </div>
                   
                   <div className="border border-gray-200 rounded-lg p-4">
-                    <p className="text-sm text-gray-500">Item Categories</p>
+                    <p className="text-sm text-gray-500">Unique Items</p>
                     <p className="text-2xl font-semibold text-gray-800">
                       {new Set(inventory
-                        .filter(item => filters.vanId === 'all' || item.vanId === filters.vanId)
-                        .map(item => item.category)
+                        .filter(item => 
+                          filters.vanId === 'all' || 
+                          (item.vanId && filters.vanId && item.vanId.toString() === filters.vanId.toString())
+                        )
+                        .flatMap(item => item.items || [])
                       ).size}
-                    </p>
-                  </div>
-                  
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <p className="text-sm text-gray-500">Latest Update</p>
-                    <p className="text-2xl font-semibold text-gray-800">
-                      {inventory
-                        .filter(item => filters.vanId === 'all' || item.vanId === filters.vanId)
-                        .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())[0]
-                        ?.lastUpdated
-                        ? new Date(inventory
-                            .filter(item => filters.vanId === 'all' || item.vanId === filters.vanId)
-                            .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())[0]
-                            .lastUpdated
-                          ).toLocaleDateString()
-                        : 'N/A'
-                      }
                     </p>
                   </div>
                   
@@ -729,16 +730,16 @@ const ReportsPage = () => {
                     <thead className="bg-gray-50">
                       <tr>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Item
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Van
                         </th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Category
+                          Items
                         </th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Quantity
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Unit of Measure
                         </th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Last Updated
@@ -747,7 +748,10 @@ const ReportsPage = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {inventory
-                        .filter(item => filters.vanId === 'all' || item.vanId === filters.vanId)
+                        .filter(item => 
+                          filters.vanId === 'all' || 
+                          (item.vanId && filters.vanId && item.vanId.toString() === filters.vanId.toString())
+                        )
                         .length === 0 ? (
                         <tr>
                           <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
@@ -756,25 +760,40 @@ const ReportsPage = () => {
                         </tr>
                       ) : (
                         inventory
-                          .filter(item => filters.vanId === 'all' || item.vanId === filters.vanId)
+                          .filter(item => 
+                            filters.vanId === 'all' || 
+                            (item.vanId && filters.vanId && item.vanId.toString() === filters.vanId.toString())
+                          )
                           .map((item) => (
                             <tr key={item.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="font-medium text-gray-900">{item.name}</div>
-                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {vans.find(v => v.id === item.vanId)?.registrationNumber || 'Unknown'}
+                                {vans.find(v => v.id && v.id.toString() === item.vanId?.toString())?.vehicleNo || 
+                                 vans.find(v => v.id && v.id.toString() === item.vanId?.toString())?.registrationNumber || 
+                                 (item.vanId ? `Van ID: ${item.vanId}` : 'Unknown')}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {item.category}
+                              <td className="px-6 py-4">
+                                <div className="font-medium text-gray-900">
+                                  {item.items && item.items.length > 0 ? (
+                                    <ul className="list-disc pl-5">
+                                      {item.items.map((itemName, index) => (
+                                        <li key={index} className="text-sm">{itemName}</li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    item.item || 'No items specified'
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                  {item.quantity} {item.unit}
+                                  {item.qty || item.quantity || 0}
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {new Date(item.lastUpdated).toLocaleDateString()}
+                                {item.uom || item.unit || 'N/A'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {item.lastUpdated ? new Date(item.lastUpdated).toLocaleDateString() : 'N/A'}
                               </td>
                             </tr>
                           ))
@@ -792,3 +811,40 @@ const ReportsPage = () => {
 };
 
 export default ReportsPage;
+
+// Define a separate interface for API response items that might have different property names
+// Define an interface that matches the API response format
+interface ApiInventoryItem {
+  id: string;
+  vanId?: string;
+  van_id?: string;
+  vanID?: string;
+  vanid?: string;
+  van?: string | { id: string };
+  bu?: string;
+  item?: string;
+  qty?: number;
+  uom?: string;
+  category?: string;
+  name?: string;
+  quantity?: number;
+  unit?: string;
+  lastUpdated?: string;
+  [key: string]: any; // Allow for any other properties that might be in the API response
+}
+
+// Extend the base InventoryItem interface for our UI needs
+// This should match the UIInventoryItem in VanInventoryPage.tsx
+interface ExtendedInventoryItem extends Omit<InventoryItem, 'vanId'> {
+  vanId: string; // Override to make it required and match the base interface
+  bu?: string;
+  item?: string; // This will now store multiple items as a comma-separated string
+  items?: string[]; // Optional array of items for internal use
+  qty?: number;
+  uom?: string;
+  category?: string;
+  name?: string;
+  quantity?: number;
+  unit?: string;
+  lastUpdated?: string;
+}

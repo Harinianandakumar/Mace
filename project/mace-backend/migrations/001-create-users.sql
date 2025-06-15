@@ -6,14 +6,14 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(100) NOT NULL,
   email VARCHAR(100) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
-  role ENUM('admin', 'manager', 'driver') DEFAULT 'driver',
+  role ENUM('mace sector head', 'manager', 'mace engineer') DEFAULT 'mace engineer',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 -- Insert default users (password is 'password' for both)
 INSERT IGNORE INTO users (name, email, password, role) VALUES 
-('Admin User', 'admin@mace.com', '$2b$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 'admin');
+('Mace Sector Head', 'mace_sector_head@gmail.com', '$2b$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 'mace sector head');
 
 INSERT IGNORE INTO users (name, email, password, role) VALUES 
-('Driver User', 'driver@mace.com', '$2b$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 'driver');
+('Mace Engineer', 'mace_engineer@mace.com', '$2b$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 'mace engineer');

@@ -7,7 +7,7 @@ async function runMigrations() {
   let connection = await mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'Youar3speci4l',
+    password: process.env.DB_PASSWORD || '',
     multipleStatements: true // Enable multiple SQL statements in a single query
   });
 
@@ -22,7 +22,7 @@ async function runMigrations() {
   connection = await mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'Youar3speci4l',
+    password: process.env.DB_PASSWORD || '',
     database: dbName,
     multipleStatements: true // Enable multiple SQL statements in a single query
   });

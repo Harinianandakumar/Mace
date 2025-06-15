@@ -3,7 +3,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'driver';
+  role: 'mace sector head' | 'manager' | 'mace engineer' | 'admin' | 'driver';
 }
 
 // Van types
@@ -76,15 +76,21 @@ export interface Stoppage {
   date: string;
   startTime: string;
   endTime?: string;
+  toDate?: string; // Add the to_date field
   reason: string;
-  status: 'ongoing' | 'resolved';
+  status: 'ongoing' | 'resolved' | 'pending';
   notes?: string;
   location?: {
     latitude: number;
     longitude: number;
   };
   authorized?: boolean;
-}
+  createdBy?: string;
+  createdByName?: string;
+  resolvedBy?: string;
+  resolvedByName?: string;
+  resolverRole?: string;
+  }
 
 // Report types
 export interface ReportFilters {

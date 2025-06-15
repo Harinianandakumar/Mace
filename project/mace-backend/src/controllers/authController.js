@@ -18,7 +18,10 @@ const login = async (req, res) => {
 
     if (rows.length === 0) {
       console.log(`User not found: ${email}`);
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ 
+        message: 'Invalid credentials',
+        error: 'user_not_found'
+      });
     }
 
     const user = rows[0];
@@ -30,24 +33,43 @@ const login = async (req, res) => {
     
     if (!isValidPassword) {
       console.log(`Invalid password for user: ${email}`);
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ 
+        message: 'Invalid credentials',
+        error: 'invalid_password'
+      });
     }
 
     // Generate JWT token
-    console.log('JWT_SECRET:', process.env.JWT_SECRET);
+    console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'Secret exists' : 'No secret');
     console.log('JWT_EXPIRES_IN:', process.env.JWT_EXPIRES_IN);
     
     // Use a default secret if the environment variable is not set
     const jwtSecret = process.env.JWT_SECRET || 'mace_super_secret_jwt_key_2024_very_secure';
+    const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
+    
     if (!process.env.JWT_SECRET) {
       console.log('Using default JWT secret');
     }
     
+    // Log the payload for debugging
+    const payload = { 
+      userId: user.id, 
+      email: user.email, 
+      role: user.role,
+      iat: Math.floor(Date.now() / 1000)
+    };
+    console.log('JWT payload:', payload);
+    
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
+      payload,
       jwtSecret,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      { expiresIn: expiresIn }
     );
+    
+    // Log token info for debugging
+    const decoded = jwt.decode(token);
+    console.log('Token expiration:', new Date(decoded.exp * 1000).toISOString());
+    console.log('Token issued at:', new Date(decoded.iat * 1000).toISOString());
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
@@ -63,14 +85,18 @@ const login = async (req, res) => {
         name: userWithoutPassword.name,
         email: userWithoutPassword.email,
         role: userWithoutPassword.role
-      }
+      },
+      expiresAt: decoded.exp * 1000 // Convert to milliseconds for frontend
     };
     
     console.log('Response being sent:', JSON.stringify(response, null, 2));
     res.json(response);
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ 
+      message: 'Internal server error',
+      error: error.message
+    });
   }
 };
 

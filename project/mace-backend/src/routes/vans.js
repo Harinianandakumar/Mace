@@ -6,8 +6,9 @@ const router = express.Router();
 
 router.get('/', authenticateToken, getAllVans);
 router.get('/:id', authenticateToken, getVanById);
-router.post('/', authenticateToken, authorizeRoles('admin', 'driver'), createVan);
-router.put('/:id', authenticateToken, authorizeRoles('admin', 'driver'), updateVan);
-router.delete('/:id', authenticateToken, authorizeRoles('admin', 'driver'), deleteVan);
+// Temporarily remove role restrictions completely
+router.post('/', authenticateToken, createVan);
+router.put('/:id', authenticateToken, updateVan);
+router.delete('/:id', authenticateToken, deleteVan);
 
 module.exports = router;

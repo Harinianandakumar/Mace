@@ -13,11 +13,11 @@ async function checkUsers() {
     console.log(rows);
     
     // Check if specific users exist
-    const [adminUser] = await pool.execute('SELECT id, name, email, role FROM users WHERE email = ?', ['admin@mace.com']);
-    console.log('Admin user exists:', adminUser.length > 0);
+    const [sectorHeadUser] = await pool.execute('SELECT id, name, email, role FROM users WHERE email = ?', ['mace_sector_head@gmail.com']);
+    console.log('Mace Sector Head user exists:', sectorHeadUser.length > 0);
     
-    const [driverUser] = await pool.execute('SELECT id, name, email, role FROM users WHERE email = ?', ['driver@mace.com']);
-    console.log('Driver user exists:', driverUser.length > 0);
+    const [maceEngineerUser] = await pool.execute('SELECT id, name, email, role FROM users WHERE email = ?', ['mace_engineer@mace.com']);
+    console.log('Mace Engineer user exists:', maceEngineerUser.length > 0);
     
   } catch (error) {
     console.error('Error checking users:', error);

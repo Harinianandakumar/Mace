@@ -39,10 +39,10 @@ const LoginPage = () => {
   };
 
   // Demo login handlers
-  const handleDemoLogin = async (userType: 'admin' | 'driver') => {
+  const handleDemoLogin = async (userType: 'mace sector head' | 'mace engineer') => {
     const demoCredentials = {
-      admin: { email: 'admin@mace.com', password: 'password' },
-      driver: { email: 'driver@mace.com', password: 'password' }
+      'mace sector head': { email: 'mace_sector_head@gmail.com', password: 'password123' },
+      'mace engineer': { email: 'mace_engineer@mace.com', password: 'password123' }
     };
 
     const { email: demoEmail, password: demoPassword } = demoCredentials[userType];
@@ -52,6 +52,7 @@ const LoginPage = () => {
     try {
       setIsLoading(true);
       setError('');
+      console.log(`Attempting demo login as ${userType} with email: ${demoEmail}`);
       const success = await login(demoEmail, demoPassword);
       
       if (success) {
@@ -198,19 +199,19 @@ const LoginPage = () => {
               <div className="flex flex-col space-y-2">
                 <button
                   type="button"
-                  onClick={() => handleDemoLogin('admin')}
+                  onClick={() => handleDemoLogin('mace sector head')}
                   disabled={isLoading}
                   className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Login as Admin
+                  Login as Mace Sector Head
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDemoLogin('driver')}
+                  onClick={() => handleDemoLogin('mace engineer')}
                   disabled={isLoading}
                   className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Login as Driver
+                  Login as Mace Engineer
                 </button>
               </div>
             </div>

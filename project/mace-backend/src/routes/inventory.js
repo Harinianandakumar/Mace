@@ -12,8 +12,8 @@ const router = express.Router();
 
 router.get('/', authenticateToken, getAllInventory);
 router.get('/van/:vanId', authenticateToken, getInventoryByVan);
-router.post('/', authenticateToken, authorizeRoles('admin', 'driver'), createInventoryItem);
-router.put('/:id', authenticateToken, authorizeRoles('admin', 'driver'), updateInventoryItem);
-router.delete('/:id', authenticateToken, authorizeRoles('admin', 'driver'), deleteInventoryItem);
+router.post('/', authenticateToken, authorizeRoles('mace sector head', 'manager', 'mace engineer'), createInventoryItem);
+router.put('/:id', authenticateToken, authorizeRoles('mace sector head', 'manager', 'mace engineer'), updateInventoryItem);
+router.delete('/:id', authenticateToken, authorizeRoles('mace sector head', 'manager', 'mace engineer'), deleteInventoryItem);
 
 module.exports = router;

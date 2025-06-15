@@ -343,9 +343,9 @@ export const hasPermission = (user, action) => {
   if (!user) return false;
   
   const permissions = {
-    admin: ['create', 'read', 'update', 'delete', 'authorize'],
+    'mace sector head': ['create', 'read', 'update', 'delete', 'authorize'],
     manager: ['create', 'read', 'update', 'authorize'],
-    driver: ['create', 'read']
+    'mace engineer': ['create', 'read']
   };
   
   return permissions[user.role]?.includes(action) || false;
